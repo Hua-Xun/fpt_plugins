@@ -125,7 +125,8 @@ class LogicData(object):
         if t is None:
             return -1
         else:
-            return t.currentHP / max(self.tdps(actor_id), 1)
+            tdps = self.tdps(actor_id)
+            return (t.currentHP / tdps) if tdps else 0
 
     @cached_property
     def combo_state(self):
@@ -201,9 +202,12 @@ class LogicData(object):
 
     @lru_cache
     def actor_distance_effective(self, target_actor):
-        t_pos = target_actor.pos
-        m_pos = self.coordinate
-        return sqrt((t_pos.x - m_pos.x) ** 2 + (t_pos.y - m_pos.y) ** 2) - self.me.HitboxRadius - target_actor.HitboxRadius
+        if self.config.custom_settings.setdefault('use_builtin_effective_distance', 'false') == 'true':
+            return target_actor.effectiveDistanceX
+        else:
+            t_pos = target_actor.pos
+            m_pos = self.coordinate
+            return sqrt((t_pos.x - m_pos.x) ** 2 + (t_pos.y - m_pos.y) ** 2) - self.me.HitboxRadius - target_actor.HitboxRadius
 
     @cached_property
     def target_distance(self):

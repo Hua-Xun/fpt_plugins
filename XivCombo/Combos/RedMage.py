@@ -1,4 +1,6 @@
 from FFxivPythonTrigger import api
+from functools import cache
+from FFxivPythonTrigger.SaintCoinach import realm
 
 """
 7503,摇荡,2
@@ -38,6 +40,16 @@ from FFxivPythonTrigger import api
 167,即刻咏唱
 1249,连续咏唱
 """
+action_sheet = realm.game_data.get_sheet('Action')
+
+
+@cache
+def skill_group(action_id: int) -> int:
+    return action_sheet[action_id]['CooldownGroup']
+
+
+def get_action_cool_down(action_id) -> float:
+    return api.XivMemory.combat_data.cool_down_group[skill_group(action_id)].remain
 
 
 def single(me):
@@ -86,8 +98,21 @@ def sword(me):
         return 7504
 
 
+def verraise(me):
+    swiftcast_cd = get_action_cool_down(7561)
+    effects = me.effects.get_dict()
+    if 167 in effects or 1249 in effects:
+        return 7523
+    else:
+        if swiftcast_cd == 0:
+            return 7561
+        else:
+            return 7514
+
+
 combos = {
-    7510: single,  # 赤火炎
-    7509: multi,  # 散碎
-    7516: sword,  # 连攻
+    'rdm_single': (7510, single),  # 赤火炎
+    'rdm_multi': (7509, multi),  # 散碎
+    'rdm_sword': (7516, sword),  # 连攻
+    'rdm_verraise': (7523, verraise)  # 复活
 }

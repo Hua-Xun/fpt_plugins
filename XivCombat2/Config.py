@@ -70,6 +70,8 @@ class CombatConfig(object):
         self.err_count = 0
         self.query_skill = None
         self.query_ability = None
+        self.auto_gcd = None
+        self.auto_location = False
         self.skill_disable: set[int] = set()
 
     def get_query_ability(self):

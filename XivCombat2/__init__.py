@@ -1,4 +1,6 @@
+import os
 from ctypes import *
+from functools import cache
 from threading import Lock
 from time import perf_counter, sleep
 from traceback import format_exc
@@ -16,7 +18,6 @@ ERR_LIMIT = 20
 DEFAULT_PERIOD = 0.2
 command = "@aCombat"
 action_sheet = realm.game_data.get_sheet('Action')
-is_area_action_cache = dict()
 
 
 def target_key(key: str):
@@ -28,6 +29,9 @@ def target_key(key: str):
         t = Api.get_focus_target()
     elif key == "[mo]":
         t = Api.get_mo_target()
+    elif key == "{mo}":
+        t = Api.get_mo_target()
+        if t is None: return None
     else:
         return key
     return t.id if t is not None else Api.get_me_actor().id
@@ -53,11 +57,14 @@ def use_item(to_use: Strategy.UseItem):
             Api.use_item(to_use.item_id, True, to_use.target_id)
 
 
+@cache
+def is_area_action(action_id: int):
+    return action_sheet[action_id]['TargetArea']
+
+
 def use_ability(to_use: Strategy.UseAbility):
     if to_use.ability_id is None: return
-    if to_use.ability_id not in is_area_action_cache:
-        is_area_action_cache[to_use.ability_id] = action_sheet[to_use.ability_id]['TargetArea']
-    if is_area_action_cache[to_use.ability_id]:
+    if is_area_action(to_use.ability_id):
         actor = Api.get_actor_by_id(to_use.target_id) if to_use.target_id != 0xe0000000 else Api.get_me_actor()
         if actor is not None:
             Api.use_area_action(to_use.ability_id, actor.pos.x, actor.pos.y, actor.pos.z, actor.id)
@@ -73,6 +80,9 @@ HotbarBlock = OffsetStruct({
 
 class XivCombat2(PluginBase):
     name = "XivCombat2"
+    git_repo = 'nyouoG/fpt_plugins'
+    repo_path = 'XivCombat2'
+    hash_path = os.path.dirname(__file__)
 
     def __init__(self):
         super().__init__()
@@ -84,25 +94,32 @@ class XivCombat2(PluginBase):
             def hook_function(_self, a1, block_p):
                 try:
                     # self.logger(block_p[0].type, block_p[0].param,self.is_working , self.config.enable)
-                    if not (self.is_working and self.config.enable):
-                        return _self.original(a1, block_p)
-                    block = block_p[0]
-                    t = Api.get_current_target()
-                    t_id = Api.get_me_actor().id if t is None else t.id
-                    if block.type == 1:
-                        self.config.enable = False
-                        self.logger.debug(f"force action {block.param}")
-                        self.config.ability_cnt += 1
-                        use_ability(Strategy.UseAbility(block.param, t_id))
-                        self.config.enable = True
-                        return 1
-                    elif block.type == 2 or block.type == 10:
-                        self.config.enable = False
-                        self.logger.debug(f"force {'item' if block.type == 2 else 'common'} {block.param}")
-                        Api.reset_ani_lock()
-                        Api.do_action(2 if block.type == 2 else 5, block.param, t_id)
-                        self.config.enable = True
-                        return 1
+                    if self.config.enable:
+                        block = block_p[0]
+                        if self.is_working:
+                            t = Api.get_current_target()
+                            t_id = Api.get_me_actor().id if t is None else t.id
+                            if block.type == 1 and (not is_area_action(block.param) or self.config.auto_location):
+                                self.config.enable = False
+                                if self.config.custom_settings.setdefault('debug_output', 'false') == 'true':
+                                    self.logger.debug(f"force action {block.param}")
+                                self.config.ability_cnt += 1
+                                use_ability(Strategy.UseAbility(block.param, t_id))
+                                self.config.enable = True
+                                return 1
+                            elif block.type == 2 or block.type == 10:
+                                self.config.enable = False
+                                if self.config.custom_settings.setdefault('debug_output', 'false') == 'true':
+                                    self.logger.debug(f"force {'item' if block.type == 2 else 'common'} {block.param}")
+                                Api.reset_ani_lock()
+                                _self.original(a1, block_p)
+                                self.config.enable = True
+                                return 1
+                        elif self.config.auto_location and block.type == 1 and is_area_action(block.param):
+                            t = Api.get_current_target()
+                            use_ability(Strategy.UseAbility(block.param, Api.get_me_actor().id if t is None else t.id))
+                            return 1
+
                 except Exception:
                     self.logger.error("error in hotbar hook", format_exc())
                 return _self.original(a1, block_p)
@@ -202,18 +219,23 @@ class XivCombat2(PluginBase):
                 if process_non_gcd:
                     to_use = self.config.get_query_ability()
                     if to_use is not None: self.config.ability_cnt += 1
-                if to_use is None: return DEFAULT_PERIOD
+                if to_use is None:
+                    if self.config.auto_gcd is not None and not data.gcd and data.valid_enemies:
+                        to_use = Strategy.UseAbility(self.config.auto_gcd)
+                    else:
+                        return DEFAULT_PERIOD
 
         # 处理决策行为
         if self.config.enable:
             if to_use.target_id is None:
                 target = data.target
                 to_use.target_id = data.me.id if target is None else target.id
-            if Api.get_current_target() is None:
+            if Api.get_current_target() is None and data.config.custom_settings.setdefault('auto_set_current_target', 'true') == 'true':
                 Api.set_current_target(Api.get_actor_by_id(to_use.target_id))
             if isinstance(to_use, Strategy.UseAbility) and Api.skill_queue_is_empty():
-                # actor=Api.get_actor_by_id(to_use.target_id)
-                # self.logger.debug(f"use:{action_sheet[to_use.ability_id]['Name']} on {actor.Name}({hex(actor.id)[2:]}/{bin(actor.unitStatus1)}/{bin(actor._uint_0x98)}")
+                if data.config.custom_settings.setdefault('debug_output', 'false') == 'true':
+                    actor = Api.get_actor_by_id(to_use.target_id)
+                    self.logger.debug(f"use:{action_sheet[to_use.ability_id]['Name']}({to_use.ability_id}) on {actor.Name}({hex(actor.id)[2:]}")
                 use_ability(to_use)
             elif isinstance(to_use, Strategy.UseItem):  # 使用道具，应该只有食物或者爆发药吧？
                 use_item(to_use)
@@ -277,7 +299,9 @@ class XivCombat2(PluginBase):
                 t = Api.get_current_target()
                 target = Api.get_me_actor().id if t is None else t.id
             else:
-                target = int(target_key(args[3]))
+                t_key = target_key(args[3])
+                if t_key is None: return
+                target = int(t_key)
             a = Strategy.UseAbility(int(args[2]), target)
             if args[1] == "ability" or args[1] == "a":
                 self.config.query_ability = a
@@ -291,7 +315,7 @@ class XivCombat2(PluginBase):
                 return f"unknown args: [{args[1]}]"
         elif args[0] == "skill_disable":
             s = int(args[1])
-            if len(args < 3):
+            if len(args) < 3:
                 if s in self.config.skill_disable:
                     try:
                         self.config.skill_disable.remove(s)
@@ -337,8 +361,19 @@ class XivCombat2(PluginBase):
             else:
                 return f"unknown args: [{args[1]}]"
         elif args[0] == "set":
-            self.config.custom_settings[args[1]] = ' '.join(args[2:])
-            return self.config.custom_settings
+            old = self.config.custom_settings.get(args[1])
+            new = ' '.join(args[2:])
+            self.config.custom_settings[args[1]] = new
+            return f"{old} => {new}"
+        elif args[0] == "auto_gcd":
+            if len(args) > 1:
+                self.config.auto_gcd = int(args[1])
+            else:
+                self.config.auto_gcd = None
+            return f"auto gcd: [{self.config.auto_gcd}]"
+        elif args[0] == "auto_location":
+            self.config.auto_location = not self.config.auto_location
+            return f"auto location: [{self.config.auto_location}]"
         else:
             return f"unknown args: [{args[0]}]"
 

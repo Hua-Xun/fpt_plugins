@@ -59,7 +59,7 @@ def get_actor_dps(a_id: int):
 
 
 def get_actor_tdps(a_id: int):
-    return api.CombatMonitor.actor_tdps(a_id)
+    return api.CombatMonitor.actor_tdps(a_id, period_sec=600)
 
 
 def get_cd_group(cd_group: int):
@@ -133,4 +133,7 @@ def get_hostiles():
 
 
 def get_coordinate():
-    return api.Coordinate()
+    try:
+        return api.Coordinate()
+    except AttributeNotFoundException:
+        return get_me_actor().pos

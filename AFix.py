@@ -22,6 +22,9 @@ skills = {
     61: SIDE,  # 双掌打，侧，武僧
     66: BACK,  # 破碎拳，背，武僧
     74: SIDE,  # 双龙脚，侧，武僧
+    2255: BACK,  # 旋风刃，背
+    3563: SIDE,  # 强甲破点突，侧
+    2258: BACK,  # 攻其不备，背
 }
 
 Vector3 = OffsetStruct({
@@ -82,6 +85,9 @@ def get_nearest(me_pos, target, mode, dis=3):
 
 class AFix(PluginBase):
     name = "AFix"
+    git_repo = 'nyouoG/fpt_plugins'
+    repo_path = 'AFix.py'
+    hash_path = __file__
 
     def __init__(self):
         super().__init__()
@@ -122,7 +128,7 @@ class AFix(PluginBase):
         else:
             msg = PositionSetPack(r=new_r, pos=target, unk2=self.set_sig if stop else 0)
             code = "UpdatePositionHandler"
-        self.logger('goto', target, new_r, hex(msg.unk0), hex(msg.unk1), hex(msg.unk2))
+        self.logger.debug('goto', target, new_r, hex(msg.unk0), hex(msg.unk1), hex(msg.unk2))
         api.XivNetwork.send_messages([(code, bytearray(msg))], False)
 
     def coor_return(self, evt):
