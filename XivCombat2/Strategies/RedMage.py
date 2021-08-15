@@ -1,5 +1,6 @@
 from math import radians
 
+from FFxivPythonTrigger.Logger import debug
 from FFxivPythonTrigger.Utils import sector, circle
 from ..Strategy import *
 from .. import Define
@@ -86,6 +87,9 @@ def res_lv(data: LogicData) -> int:
     return int(data.max_ttk > 6)
 
 
+combos = {7504, 7512}
+
+
 class RDMLogic(Strategy):
     name = "rdm_logic"
     fight_only = False
@@ -132,7 +136,7 @@ class RDMLogic(Strategy):
             return UseAbility(16530)
         "处理魔连击结束"
 
-        if min_mana >= 5:  # 续斩处理溢出魔元、走位
+        if min_mana >= 5 and data.me.level >= 76:  # 续斩处理溢出魔元、走位
             if max_mana >= (90 if res else 97) and dis > 10: return UseAbility(16529)
             # if res and data.is_moving and not has_swift:
             #     if data.gcd:
@@ -172,7 +176,10 @@ class RDMLogic(Strategy):
         min_mana = min(data.gauge.white_mana, data.gauge.black_mana)
 
         if res_lv(data) and data.target_distance < 20:
-            if not data[7521] and 40 <= min_mana <= 50: return UseAbility(7521)  # 倍增
+            if not data[7521] and 40 <= min_mana <= 60 and data.combo_id not in combos:
+                if not data[7506] and data.target_distance < 1: return UseAbility(7506)
+                if not data[16527] and data.target_distance < 3: return UseAbility(16527)
+                return UseAbility(7521)  # 倍增
             if not data[7518] and min_mana < 60: return UseAbility(7518)  # 促进
             if not data[7520] and min_mana >= (50 if count_enemy(data, 2) < 3 else 20): return UseAbility(7520)  # 鼓励
             if not data[7517]: return UseAbility(7517)  # 飞刺
